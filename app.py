@@ -43,7 +43,7 @@ def detect_ma(series, window=7, threshold_pct=0.2):
 def load_data():
     try:
         # АВТОРИЗАЦИЯ
-        gc = gspread.service_account(filename="service_account.json")
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         
         # ОТКРЫТИЕ ТАБЛИЦЫ (Вставьте вашу ссылку!)
         sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1QPf81XTT-WoAFquzTYeMDO27VnC_mLvoCFfUO1rQj_8/edit?usp=sharing") 
@@ -281,4 +281,5 @@ def main():
                 st.info("Ensure 'kaleido' is installed: pip install kaleido")
 
 if __name__ == "__main__":
+
     main()
