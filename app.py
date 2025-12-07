@@ -267,7 +267,7 @@ def main():
                     pdf.chapter_body("No anomalies detected within the selected parameters.")
 
                 # 3. Вывод
-                pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                pdf_bytes = pdf.output(dest='S')
                 
                 st.download_button(
                     label="💾 Save Report",
@@ -283,3 +283,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
