@@ -111,7 +111,7 @@ def main():
         return
 
     # Подготовка данных
-    value_col = 'SMOOTHED FINAL'
+    value_col = 'SMOOTHED_FINAL'
     series = df[value_col]
     
     # 1. KPI SECTION
@@ -283,6 +283,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
