@@ -59,7 +59,7 @@ def load_data():
         df['Date'] = pd.to_datetime(df['Date'], format='%d.%m.%Y', errors='coerce')
         
         # Преобразуем числа (заменяем запятые на точки, если есть, и убираем пробелы)
-        col_name = 'SMOOTHED_FINAL' # Имя колонки из Google Sheet
+        col_name = 'SMOOTHED FINAL' # Имя колонки из Google Sheet
         df[col_name] = df[col_name].astype(str).str.replace(',', '.', regex=False).str.replace(r'[^\d\.]', '', regex=True)
         df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
         
@@ -111,7 +111,7 @@ def main():
         return
 
     # Подготовка данных
-    value_col = 'SMOOTHED_FINAL'
+    value_col = 'SMOOTHED FINAL'
     series = df[value_col]
     
     # 1. KPI SECTION
@@ -283,6 +283,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
