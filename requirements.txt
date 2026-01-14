@@ -4,6 +4,7 @@ plotly
 scipy
 scikit-learn
 streamlit
+fpdf2
 
 
 
