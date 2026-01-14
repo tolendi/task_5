@@ -10,7 +10,7 @@ from fpdf import FPDF
 
 # --- КОНФИГУРАЦИЯ СТРАНИЦЫ ---
 st.set_page_config(
-    page_title="Weyland-Yutani Corp | Mining BI",
+    page_title="Weyland-Yutani Corp | Mining BI",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -283,4 +283,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
