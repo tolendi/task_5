@@ -6,14 +6,14 @@ from scipy import stats
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from fpdf import FPDF
-import tempfile
 
 # --- ЗАГРУЗКА ДАННЫХ ---
 @st.cache_data(ttl=600)
 def load_data(url):
-    # Авто-замена на формат CSV
+    # Авто-замена на формат CSV, если ссылка обычная
     if "edit?usp=sharing" in url:
-        url = url.replace("edit?usp=sharing", "export?format=csv&gid=1054366367") # ЗАМЕНИТЕ GID НА ВАШ
+        url = url.replace("edit?usp=sharing", "export?format=csv&gid=1541532661")
+    
     df = pd.read_csv(url, decimal=',')
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
     df = df.dropna(subset=['SMOOTHED FINAL'])
@@ -36,18 +36,19 @@ def detect_anomalies(data, method, param):
     elif method == "Grubbs Test":
         std_dev = np.abs(series - series.mean())
         return std_dev > (param * series.std())
+    return pd.Series([False] * len(data))
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ PDF ---
 def create_pdf(df, stats_dict, method_name):
     pdf = FPDF()
     pdf.add_page()
     
-    # Заголовок в стиле Weyland-Yutani
+    # Заголовок
     pdf.set_font("Arial", "B", 16)
     pdf.cell(200, 10, "WEYLAND-YUTANI | MINING OPERATIONS REPORT", ln=True, align='C')
     pdf.ln(10)
     
-    # Секция статистики
+    # Статистика
     pdf.set_font("Arial", "B", 12)
     pdf.cell(200, 10, "1. Executive Summary (Statistics):", ln=True)
     pdf.set_font("Arial", "", 10)
@@ -56,7 +57,7 @@ def create_pdf(df, stats_dict, method_name):
     
     pdf.ln(5)
     
-    # Секция аномалий
+    # Аномалии
     pdf.set_font("Arial", "B", 12)
     pdf.cell(200, 10, f"2. Anomaly Detection (Method: {method_name}):", ln=True)
     
@@ -77,9 +78,10 @@ def create_pdf(df, stats_dict, method_name):
     return bytes(pdf.output())
 
 # --- ИНТЕРФЕЙС ---
-st.title("Weyland-Yutani | Operations Center")
+st.set_page_config(layout="wide", page_title="Weyland-Yutani BI")
+st.title("🛰️ Weyland-Yutani | Operations Center")
 
-# !!! ОБЯЗАТЕЛЬНО ПРОВЕРЬТЕ GID ТУТ !!!
+# Ссылка на таблицу (GID 1541532661 для листа Data)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY/export?format=csv&gid=1541532661"
 
 try:
@@ -89,14 +91,14 @@ try:
     # Сайдбар
     st.sidebar.header("Analysis Parameters")
     chart_type = st.sidebar.selectbox("Chart Type", ["Line", "Bar"])
-    poly_deg = st.sidebar.slider("Trend Degree", 1, 4, 1)
-    test_method = st.sidebar.selectbox("Test", ["IQR Rule", "Z-Score", "Moving Average Dist", "Grubbs Test"])
-    test_param = st.sidebar.number_input("Threshold", value=1.5 if test_method=="IQR Rule" else 3.0)
+    poly_deg = st.sidebar.slider("Trend Degree (Polynomial)", 1, 4, 1)
+    test_method = st.sidebar.selectbox("Anomaly Test", ["IQR Rule", "Z-Score", "Moving Average Dist", "Grubbs Test"])
+    test_param = st.sidebar.number_input("Threshold (Sensitivity)", value=1.5 if test_method=="IQR Rule" else 3.0)
 
-    # Расчеты
+    # Расчеты аномалий
     df['is_anomaly'] = detect_anomalies(df, test_method, test_param)
     
-    # KPI для отчета
+    # KPI
     stats_dict = {
         "Mean Daily Output": df[val_col].mean(),
         "Standard Deviation": df[val_col].std(),
@@ -104,32 +106,38 @@ try:
         "Interquartile Range (IQR)": df[val_col].quantile(0.75) - df[val_col].quantile(0.25)
     }
 
-    # Вывод метрик на экран
+    # Вывод метрик
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Mean", round(stats_dict["Mean Daily Output"], 2))
     c2.metric("Std Dev", round(stats_dict["Standard Deviation"], 2))
     c3.metric("Median", round(stats_dict["Median"], 2))
     c4.metric("IQR", round(stats_dict["Interquartile Range (IQR)"], 2))
 
-    # График (Trendline)
+    # Тренд
     X = np.array(range(len(df))).reshape(-1, 1)
     poly = PolynomialFeatures(degree=poly_deg)
-    model = LinearRegression().fit(poly.fit_transform(X), df[val_col])
-    df['trend'] = model.predict(poly.fit_transform(X))
+    X_poly = poly.fit_transform(X)
+    model = LinearRegression().fit(X_poly, df[val_col])
+    df['trend'] = model.predict(X_poly)
 
+    # Отрисовка графика
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Output", line=dict(color='#00d4ff')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['trend'], name="Trend", line=dict(color='yellow', dash='dot')))
+    if chart_type == "Line":
+        fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Output", line=dict(color='#00d4ff')))
+    else:
+        fig.add_trace(go.Bar(x=df['Date'], y=df[val_col], name="Output", marker_color='#00d4ff'))
+        
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['trend'], name=f"Trend (Deg {poly_deg})", line=dict(color='yellow', dash='dot')))
     
     anoms = df[df['is_anomaly']]
-    fig.add_trace(go.Scatter(x=anoms['Date'], y=anoms[val_col], mode='markers', name="🚨 Alert", marker=dict(color='red', size=10)))
+    fig.add_trace(go.Scatter(x=anoms['Date'], y=anoms[val_col], mode='markers', name="🚨 Alert", marker=dict(color='red', size=10, symbol='x')))
     
     st.plotly_chart(fig, use_container_width=True)
 
     # --- КНОПКА PDF ---
+    st.divider()
     try:
         pdf_data = create_pdf(df, stats_dict, test_method)
-        
         st.download_button(
             label="💾 Download Detailed PDF Report",
             data=pdf_data,
@@ -137,8 +145,11 @@ try:
             mime="application/pdf",
             key="pdf_download"
         )
-        st.info("Report is ready for extraction.")
-        
+        st.info("Report generated. Click the button above to save.")
     except Exception as pdf_err:
-        st.error(f"PDF Engine Error: {pdf_err}")
+        st.error(f"PDF Error: {pdf_err}")
 
+# --- ЗАКРЫВАЕМ ОСНОВНОЙ TRY ---
+except Exception as e:
+    st.error(f"Data Feed Error: {e}")
+    st.info("Check if 'SMOOTHED FINAL' column exists in GSheets and GID is correct.")
