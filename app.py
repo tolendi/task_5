@@ -74,7 +74,7 @@ def create_pdf(df, stats_dict, method_name):
     else:
         pdf.cell(200, 10, "No anomalies detected in this period.", ln=True)
 
-    return pdf.output()
+    return bytes(pdf.output())
 
 # --- ИНТЕРФЕЙС ---
 st.title("Weyland-Yutani | Operations Center")
@@ -127,16 +127,18 @@ try:
     st.plotly_chart(fig, use_container_width=True)
 
     # --- КНОПКА PDF ---
-    st.divider()
-    if st.button("🛠️ Generate Detailed PDF Report"):
+    try:
         pdf_data = create_pdf(df, stats_dict, test_method)
+        
         st.download_button(
-            label="💾 Download PDF Report",
+            label="💾 Download Detailed PDF Report",
             data=pdf_data,
             file_name="Weyland_Yutani_Report.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
+            key="pdf_download"
         )
-        st.success("Report generated successfully.")
+        st.info("Report is ready for extraction.")
+        
+    except Exception as pdf_err:
+        st.error(f"PDF Engine Error: {pdf_err}")
 
-except Exception as e:
-    st.error(f"Waiting for Data Feed... (Error: {e})")
