@@ -3,6 +3,7 @@ numpy
 plotly
 scipy
 scikit-learn
+streamlit
 
 
 
