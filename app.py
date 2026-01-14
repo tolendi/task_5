@@ -2,69 +2,104 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from scipy import stats
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
 
-def load_and_process_data(sheet_url):
-    # Читаем CSV, указывая, что десятичный разделитель — запятая
-    # Это превратит '3399,96' в число 3399.96
-    df = pd.read_csv(sheet_url, decimal=',')
-    
-    # Удаляем пустые строки, если они есть
-    df = df.dropna(subset=['Date', 'SMOOTHED FINAL'])
-    
-    # Приводим даты в порядок
+# --- 1. ЗАГРУЗКА ДАННЫХ ---
+@st.cache_data(ttl=600)
+def load_data(url):
+    df = pd.read_csv(url, decimal=',')
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
-    val_col = 'SMOOTHED FINAL'
-    
-    # Принудительно конвертируем колонку в числа (на случай, если закрался текст)
-    df[val_col] = pd.to_numeric(df[val_col], errors='coerce')
-    
-    # 2. Умная детекция аномалий
-    df['day_of_week'] = df['Date'].dt.dayofweek
-    df['is_anomaly'] = False
-    
-    for day in range(7):
-        day_mask = df['day_of_week'] == day
-        day_data = df.loc[day_mask, val_col]
-        
-        if len(day_data) > 0:
-            mean = day_data.mean()
-            std = day_data.std()
-            # Защита от деления на ноль, если std = 0
-            if std > 0:
-                anomalies = np.abs(df.loc[day_mask, val_col] - mean) > (3 * std)
-                df.loc[day_mask, 'is_anomaly'] = anomalies
-    
+    df = df.dropna(subset=['SMOOTHED FINAL'])
     return df
 
-# --- ИНТЕРФЕЙС ---
-st.title("🛰️ Weyland-Yutani | Mining Operations Center")
+# --- 2. СТАТИСТИЧЕСКИЕ ТЕСТЫ ---
+def detect_anomalies(data, method, param):
+    series = data['SMOOTHED FINAL']
+    if method == "IQR Rule":
+        Q1, Q3 = series.quantile(0.25), series.quantile(0.75)
+        IQR = Q3 - Q1
+        return (series < (Q1 - param * IQR)) | (series > (Q3 + param * IQR))
+    
+    elif method == "Z-Score":
+        z = np.abs(stats.zscore(series))
+        return z > param
+    
+    elif method == "Moving Average Dist":
+        ma = series.rolling(window=7, center=True).mean()
+        dist = np.abs(series - ma) / ma
+        return dist > (param / 100)
+    
+    elif method == "Grubbs Test":
+        # Упрощенная реализация через отклонение от среднего
+        std_dev = np.abs(series - series.mean())
+        return std_dev > (param * series.std())
 
-# Ссылка на вашу таблицу (экспорт в CSV)
-SHEET_ID = "1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY"
-DATA_GID = "1541532661" # Обычно 0 для первого листа, или число из ссылки gid=...
-csv_url = f"https://docs.google.com/spreadsheets/d/e/2PACX-1vQwLRedMgwJUgBxq-349qrMcbrOA4oKtpnSc5YoVa3KaBaaB67MUZTeL5yvY-PKgn2pn3rSjSb2fbtX/pub?gid=1541532661&single=true&output=csv"
+# --- 3. ИНТЕРФЕЙС ---
+st.set_page_config(layout="wide", page_title="Mining BI")
+st.title("🛰️ Weyland-Yutani Operations Dashboard")
+
+# Ссылка из ваших Secrets
+SHEET_URL = st.secrets["https://docs.google.com/spreadsheets/d/1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY/edit?usp=sharing"]
 
 try:
-    df = load_and_process_data(csv_url)
+    df = load_data(SHEET_URL)
+    val_col = 'SMOOTHED FINAL'
+
+    # --- САЙДБАР (Настройки) ---
+    st.sidebar.header("Analysis Settings")
+    chart_type = st.sidebar.selectbox("Chart Type", ["Line", "Bar", "Stacked Area"])
+    poly_deg = st.sidebar.slider("Trendline Polynomial Degree", 1, 4, 1)
     
-    # График
+    test_method = st.sidebar.selectbox("Anomaly Test", ["IQR Rule", "Z-Score", "Moving Average Dist", "Grubbs Test"])
+    test_param = st.sidebar.number_input("Test Sensitivity (Sigma/Factor)", value=1.5 if test_method=="IQR Rule" else 3.0)
+
+    # --- СТАТИСТИКА (KPI) ---
+    st.subheader("Production Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1: st.metric("Mean Daily", round(df[val_col].mean(), 2))
+    with col2: st.metric("Std Dev", round(df[val_col].std(), 2))
+    with col3: st.metric("Median", round(df[val_col].median(), 2))
+    with col4: st.metric("IQR", round(df[val_col].quantile(0.75) - df[val_col].quantile(0.25), 2))
+
+    # --- РАСЧЕТ ТРЕНДА И АНОМАЛИЙ ---
+    df['is_anomaly'] = detect_anomalies(df, test_method, test_param)
+    
+    # Регрессия для тренда
+    X = np.array(range(len(df))).reshape(-1, 1)
+    y = df[val_col].values
+    poly = PolynomialFeatures(degree=poly_deg)
+    X_poly = poly.fit_transform(X)
+    model = LinearRegression().fit(X_poly, y)
+    df['trend'] = model.predict(X_poly)
+
+    # --- ГРАФИК ---
     fig = go.Figure()
-    # Основная линия
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['SMOOTHED FINAL'], name="Production Output", line=dict(color='#00d4ff')))
     
-    # Аномалии (только те точки, где True)
+    # Выбор типа графика
+    if chart_type == "Line":
+        fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Production", line=dict(color='#00d4ff')))
+    elif chart_type == "Bar":
+        fig.add_trace(go.Bar(x=df['Date'], y=df[val_col], name="Production", marker_color='#00d4ff'))
+    else:
+        fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Production", fill='tozeroy', line=dict(color='#00d4ff')))
+
+    # Тренд
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['trend'], name="Trendline", line=dict(color='yellow', dash='dash')))
+
+    # Аномалии
     anoms = df[df['is_anomaly']]
-    fig.add_trace(go.Scatter(x=anoms['Date'], y=anoms['SMOOTHED FINAL'], 
-                             mode='markers', name="🚨 System Alert", 
-                             marker=dict(color='red', size=10, symbol='circle-open')))
-    
+    fig.add_trace(go.Scatter(x=anoms['Date'], y=anoms[val_col], mode='markers', 
+                             name="Anomaly", marker=dict(color='red', size=12, symbol='x')))
+
     st.plotly_chart(fig, use_container_width=True)
-    
-    st.success("Data Feed: Active. All sensors operational.")
+
+    # --- ОТЧЕТ ---
+    if st.button("Generate PDF Report"):
+        st.warning("PDF Generation requires 'fpdf' or 'reportlab' library. Add to requirements.txt.")
+        # Тут логика формирования PDF (пока заглушка)
+        st.info("Section for Anomaly Details: Detected " + str(len(anoms)) + " events.")
 
 except Exception as e:
-    st.error(f"❌ Ошибка подключения:")
-    st.write(e) # Это покажет технический текст ошибки
-    st.info(f"Проверьте ссылку. Сейчас код использует: {csv_url}")
-
-
+    st.error(f"Error: {e}")
