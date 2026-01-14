@@ -53,5 +53,7 @@ try:
     st.success("Data Feed: Active. All sensors operational.")
 
 except Exception as e:
-    st.info("Please connect the Google Sheets data source to begin analysis.")
+    st.error(f"❌ Ошибка подключения:")
+    st.write(e) # Это покажет технический текст ошибки
+    st.info(f"Проверьте ссылку. Сейчас код использует: {csv_url}")
 
