@@ -4,25 +4,35 @@ import numpy as np
 import plotly.graph_objects as go
 
 def load_and_process_data(sheet_url):
-    # Читаем лист Data
-    df = pd.read_csv(sheet_url)
+    # Читаем CSV, указывая, что десятичный разделитель — запятая
+    # Это превратит '3399,96' в число 3399.96
+    df = pd.read_csv(sheet_url, decimal=',')
     
-    # 1. Приводим форматы в порядок
+    # Удаляем пустые строки, если они есть
+    df = df.dropna(subset=['Date', 'SMOOTHED FINAL'])
+    
+    # Приводим даты в порядок
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
     val_col = 'SMOOTHED FINAL'
     
-    # 2. Умная детекция аномалий
-    # Считаем среднее и отклонение для каждого дня недели отдельно
-    # Это нужно, чтобы субботнее снижение не считалось аномалией
-    df['day_of_week'] = df['Date'].dt.dayofweek
+    # Принудительно конвертируем колонку в числа (на случай, если закрался текст)
+    df[val_col] = pd.to_numeric(df[val_col], errors='coerce')
     
+    # 2. Умная детекция аномалий
+    df['day_of_week'] = df['Date'].dt.dayofweek
     df['is_anomaly'] = False
+    
     for day in range(7):
-        day_data = df[df['day_of_week'] == day][val_col]
-        mean = day_data.mean()
-        std = day_data.std()
-        # Если значение отклоняется более чем на 3 сигмы от среднего ДЛЯ ЭТОГО ДНЯ
-        df.loc[df['day_of_week'] == day, 'is_anomaly'] = np.abs(df[val_col] - mean) > (3 * std)
+        day_mask = df['day_of_week'] == day
+        day_data = df.loc[day_mask, val_col]
+        
+        if len(day_data) > 0:
+            mean = day_data.mean()
+            std = day_data.std()
+            # Защита от деления на ноль, если std = 0
+            if std > 0:
+                anomalies = np.abs(df.loc[day_mask, val_col] - mean) > (3 * std)
+                df.loc[day_mask, 'is_anomaly'] = anomalies
     
     return df
 
@@ -56,4 +66,5 @@ except Exception as e:
     st.error(f"❌ Ошибка подключения:")
     st.write(e) # Это покажет технический текст ошибки
     st.info(f"Проверьте ссылку. Сейчас код использует: {csv_url}")
+
 
