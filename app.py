@@ -48,7 +48,7 @@ st.set_page_config(layout="wide", page_title="Weyland-Yutani Mining BI")
 st.title("🛰️ Weyland-Yutani | Mining Operations Dashboard")
 
 # Прямая вставка ссылки (чтобы избежать KeyError в secrets)
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY/export?format=csv&gid=0"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY/export?format=csv&gid=1541532661"
 
 try:
     df = load_data(SHEET_URL)
@@ -116,3 +116,4 @@ try:
 
 except Exception as e:
     st.error(f"Critical System Error: {e}")
+
