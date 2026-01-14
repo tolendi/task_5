@@ -5,27 +5,21 @@ import plotly.graph_objects as go
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
-from io import BytesIO
+from fpdf import FPDF
+import tempfile
 
-# --- 1. ЗАГРУЗКА ДАННЫХ ---
+# --- ЗАГРУЗКА ДАННЫХ ---
 @st.cache_data(ttl=600)
 def load_data(url):
-    # Принудительно конвертируем ссылку в формат экспорта CSV
+    # Авто-замена на формат CSV
     if "edit?usp=sharing" in url:
-        url = url.replace("edit?usp=sharing", "export?format=csv&gid=0")
-    
+        url = url.replace("edit?usp=sharing", "export?format=csv&gid=1054366367") # ЗАМЕНИТЕ GID НА ВАШ
     df = pd.read_csv(url, decimal=',')
-    
-    # Проверка наличия колонки
-    if 'SMOOTHED FINAL' not in df.columns:
-        st.error(f"Колонка 'SMOOTHED FINAL' не найдена. Доступные колонки: {df.columns.tolist()}")
-        st.stop()
-        
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
     df = df.dropna(subset=['SMOOTHED FINAL'])
     return df
 
-# --- 2. СТАТИСТИЧЕСКИЕ ТЕСТЫ ---
+# --- ТЕСТЫ АНОМАЛИЙ ---
 def detect_anomalies(data, method, param):
     series = data['SMOOTHED FINAL']
     if method == "IQR Rule":
@@ -43,77 +37,106 @@ def detect_anomalies(data, method, param):
         std_dev = np.abs(series - series.mean())
         return std_dev > (param * series.std())
 
-# --- 3. ИНТЕРФЕЙС ---
-st.set_page_config(layout="wide", page_title="Weyland-Yutani Mining BI")
-st.title("🛰️ Weyland-Yutani | Mining Operations Dashboard")
+# --- ФУНКЦИЯ ГЕНЕРАЦИИ PDF ---
+def create_pdf(df, stats_dict, method_name):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Заголовок в стиле Weyland-Yutani
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, "WEYLAND-YUTANI | MINING OPERATIONS REPORT", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Секция статистики
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(200, 10, "1. Executive Summary (Statistics):", ln=True)
+    pdf.set_font("Arial", "", 10)
+    for key, val in stats_dict.items():
+        pdf.cell(200, 7, f"- {key}: {val:.2f}", ln=True)
+    
+    pdf.ln(5)
+    
+    # Секция аномалий
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(200, 10, f"2. Anomaly Detection (Method: {method_name}):", ln=True)
+    
+    anoms = df[df['is_anomaly']]
+    if not anoms.empty:
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(60, 10, "Date", border=1)
+        pdf.cell(60, 10, "Output Value", border=1)
+        pdf.ln()
+        pdf.set_font("Arial", "", 10)
+        for i, row in anoms.iterrows():
+            pdf.cell(60, 10, str(row['Date'].date()), border=1)
+            pdf.cell(60, 10, str(round(row['SMOOTHED FINAL'], 2)), border=1)
+            pdf.ln()
+    else:
+        pdf.cell(200, 10, "No anomalies detected in this period.", ln=True)
 
-# Прямая вставка ссылки (чтобы избежать KeyError в secrets)
+    return pdf.output()
+
+# --- ИНТЕРФЕЙС ---
+st.title("Weyland-Yutani | Operations Center")
+
+# !!! ОБЯЗАТЕЛЬНО ПРОВЕРЬТЕ GID ТУТ !!!
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY/export?format=csv&gid=1541532661"
 
 try:
     df = load_data(SHEET_URL)
     val_col = 'SMOOTHED FINAL'
 
-    # --- САЙДБАР ---
-    st.sidebar.header("Control Panel")
-    chart_type = st.sidebar.selectbox("Chart Type", ["Line", "Bar", "Stacked Area"])
-    poly_deg = st.sidebar.slider("Trendline Polynomial Degree", 1, 4, 1)
-    
-    st.sidebar.subheader("Anomaly Detection")
-    test_method = st.sidebar.selectbox("Test Method", ["IQR Rule", "Z-Score", "Moving Average Dist", "Grubbs Test"])
-    test_param = st.sidebar.number_input("Sensitivity Factor", value=1.5 if test_method=="IQR Rule" else 3.0)
+    # Сайдбар
+    st.sidebar.header("Analysis Parameters")
+    chart_type = st.sidebar.selectbox("Chart Type", ["Line", "Bar"])
+    poly_deg = st.sidebar.slider("Trend Degree", 1, 4, 1)
+    test_method = st.sidebar.selectbox("Test", ["IQR Rule", "Z-Score", "Moving Average Dist", "Grubbs Test"])
+    test_param = st.sidebar.number_input("Threshold", value=1.5 if test_method=="IQR Rule" else 3.0)
 
-    # --- СТАТИСТИКА (KPI) ---
-    mean_val = df[val_col].mean()
-    std_val = df[val_col].std()
-    med_val = df[val_col].median()
-    iqr_val = df[val_col].quantile(0.75) - df[val_col].quantile(0.25)
-
-    st.subheader("Mine Performance Metrics")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Mean Output", f"{mean_val:.2f}")
-    c2.metric("Std Deviation", f"{std_val:.2f}")
-    c3.metric("Median", f"{med_val:.2f}")
-    c4.metric("IQR", f"{iqr_val:.2f}")
-
-    # --- ТРЕНД И АНОМАЛИИ ---
+    # Расчеты
     df['is_anomaly'] = detect_anomalies(df, test_method, test_param)
     
+    # KPI для отчета
+    stats_dict = {
+        "Mean Daily Output": df[val_col].mean(),
+        "Standard Deviation": df[val_col].std(),
+        "Median": df[val_col].median(),
+        "Interquartile Range (IQR)": df[val_col].quantile(0.75) - df[val_col].quantile(0.25)
+    }
+
+    # Вывод метрик на экран
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Mean", round(stats_dict["Mean Daily Output"], 2))
+    c2.metric("Std Dev", round(stats_dict["Standard Deviation"], 2))
+    c3.metric("Median", round(stats_dict["Median"], 2))
+    c4.metric("IQR", round(stats_dict["Interquartile Range (IQR)"], 2))
+
+    # График (Trendline)
     X = np.array(range(len(df))).reshape(-1, 1)
-    y = df[val_col].values
     poly = PolynomialFeatures(degree=poly_deg)
-    X_poly = poly.fit_transform(X)
-    model = LinearRegression().fit(X_poly, y)
-    df['trend'] = model.predict(X_poly)
+    model = LinearRegression().fit(poly.fit_transform(X), df[val_col])
+    df['trend'] = model.predict(poly.fit_transform(X))
 
-    # --- ГРАФИК ---
     fig = go.Figure()
-    if chart_type == "Line":
-        fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Output", line=dict(color='#00d4ff', width=2)))
-    elif chart_type == "Bar":
-        fig.add_trace(go.Bar(x=df['Date'], y=df[val_col], name="Output", marker_color='#00d4ff'))
-    else:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Output", fill='tozeroy', line=dict(color='#00d4ff')))
-
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['trend'], name=f"Trend (Poly {poly_deg})", line=dict(color='yellow', dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=df[val_col], name="Output", line=dict(color='#00d4ff')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['trend'], name="Trend", line=dict(color='yellow', dash='dot')))
     
     anoms = df[df['is_anomaly']]
-    fig.add_trace(go.Scatter(x=anoms['Date'], y=anoms[val_col], mode='markers', name="🚨 Anomaly", 
-                             marker=dict(color='red', size=10, symbol='diamond')))
-
+    fig.add_trace(go.Scatter(x=anoms['Date'], y=anoms[val_col], mode='markers', name="🚨 Alert", marker=dict(color='red', size=10)))
+    
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- PDF ОТЧЕТ (Упрощенная генерация через CSV/Table) ---
+    # --- КНОПКА PDF ---
     st.divider()
-    if st.button("Generate Detailed Report"):
-        report_df = df[df['is_anomaly']][['Date', val_col]]
-        st.subheader("Anomaly Log")
-        st.table(report_df)
-        
-        # Скачивание лога как CSV (самый быстрый аналог PDF для анализа)
-        csv = report_df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download Log as CSV", csv, "anomaly_report.csv", "text/csv")
+    if st.button("🛠️ Generate Detailed PDF Report"):
+        pdf_data = create_pdf(df, stats_dict, test_method)
+        st.download_button(
+            label="💾 Download PDF Report",
+            data=pdf_data,
+            file_name="Weyland_Yutani_Report.pdf",
+            mime="application/pdf"
+        )
+        st.success("Report generated successfully.")
 
 except Exception as e:
-    st.error(f"Critical System Error: {e}")
-
+    st.error(f"Waiting for Data Feed... (Error: {e})")
