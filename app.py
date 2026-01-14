@@ -41,7 +41,7 @@ st.set_page_config(layout="wide", page_title="Mining BI")
 st.title("🛰️ Weyland-Yutani Operations Dashboard")
 
 # Ссылка из ваших Secrets
-SHEET_URL = st.secrets["https://docs.google.com/spreadsheets/d/1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY/edit?usp=sharing"]
+SHEET_URL = st.secrets["gsheets_url"]
 
 try:
     df = load_data(SHEET_URL)
@@ -103,3 +103,4 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
+
