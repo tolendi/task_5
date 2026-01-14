@@ -30,9 +30,9 @@ def load_and_process_data(sheet_url):
 st.title("🛰️ Weyland-Yutani | Mining Operations Center")
 
 # Ссылка на вашу таблицу (экспорт в CSV)
-SHEET_ID = "ВАШ_ID_ТАБЛИЦЫ"
-DATA_GID = "ID_ЛИСТА_DATA" # Обычно 0 для первого листа, или число из ссылки gid=...
-csv_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={DATA_GID}"
+SHEET_ID = "1O3PPHYZDVzHoa_AamKwv-4y1GRfpII4XzuRVURvK4RY"
+DATA_GID = "1541532661" # Обычно 0 для первого листа, или число из ссылки gid=...
+csv_url = f"https://docs.google.com/spreadsheets/d/e/2PACX-1vQwLRedMgwJUgBxq-349qrMcbrOA4oKtpnSc5YoVa3KaBaaB67MUZTeL5yvY-PKgn2pn3rSjSb2fbtX/pub?gid=1541532661&single=true&output=csv"
 
 try:
     df = load_and_process_data(csv_url)
@@ -54,3 +54,4 @@ try:
 
 except Exception as e:
     st.info("Please connect the Google Sheets data source to begin analysis.")
+
